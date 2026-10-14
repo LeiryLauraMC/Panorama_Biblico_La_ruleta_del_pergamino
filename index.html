@@ -91,6 +91,8 @@ main{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1.05fr 1fr;gr
 .quality{display:inline-block;background:var(--gold2);padding:0 8px;border-radius:6px;font-weight:700;transform:rotate(-1deg);border:1.5px solid var(--ink)}
 .bible-hint{font-family:'Caveat',cursive;font-size:clamp(1.15rem,3vh,1.55rem);color:var(--terra);margin-top:.6vh}
 .next-step{margin-top:1vh;font-size:clamp(.8rem,1.8vh,.95rem);color:var(--ink2);display:flex;align-items:center;gap:8px}
+.absent-btn{margin-left:auto;font-family:'DM Sans';font-weight:700;font-size:clamp(.72rem,1.6vh,.85rem);padding:.5vh 12px;border-radius:20px;border:1.5px dashed var(--ink2);background:transparent;color:var(--ink2);cursor:pointer;white-space:nowrap}
+.absent-btn:hover{background:var(--parch2);color:var(--ink)}
 .next-step svg{width:20px;height:20px;stroke:var(--ink2);fill:none;stroke-width:2}
 
 .shelf{flex:1 1 auto;min-height:0;padding:2.8vh 18px 1.6vh;display:flex;flex-direction:column}
@@ -244,7 +246,7 @@ footer{flex:0 0 auto;text-align:center;padding:.4vh 0 1.4vh;font-size:clamp(.75r
 <div class="overlay" id="setOverlay">
   <div class="settings">
     <h2>Estudiantes de la clase</h2>
-    <p>Un nombre por línea. Al guardar, la ruleta se llena de nuevo con esta lista (las preguntas ya abiertas se conservan).</p>
+    <p>Un nombre por línea. Puedes agregar o quitar personas en cualquier momento: quienes ya giraron no vuelven a entrar, los nuevos se suman a la ruleta y los rollos abiertos se conservan.</p>
     <textarea id="namesArea"></textarea>
     <div class="row">
       <button class="btn alt" id="resetAll">Reiniciar todo</button>
@@ -504,13 +506,24 @@ function renderMission(){
     b.innerHTML=`<div class="chooser-name">¡${S.chooser}!</div>
       <div class="mission-text">${ph(S.chooser,Q.t)}</div>
       <div class="bible-hint">…${Q.b}</div>
-      <div class="next-step"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Cuando esté elegida, que escoja un rollo de la repisa.</div>`;
+      <div class="next-step"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Cuando esté elegida, que escoja un rollo de la repisa.
+        <button class="absent-btn" id="absentBtn">No vino hoy · girar otra vez</button></div>`;
+    document.getElementById("absentBtn").onclick=markAbsent;
   }else{
     const done=S.opened.filter(Boolean).length;
     b.innerHTML = done===0
       ? `<p class="idle">Gira la ruleta. Quien salga <b>no responde</b>: ¡elige a quién le toca responder! Luego esa persona abre uno de los <b>25 rollos</b>.</p>`
       : `<p class="idle">Llevamos <b>${done}</b> ${done===1?"rollo abierto":"rollos abiertos"}. ¡Gira otra vez para la siguiente misión!</p>`;
   }
+}
+
+function markAbsent(){
+  if(S.phase!=="mission"||spinning)return;
+  const n=S.chooser;
+  S.allNames=S.allNames.filter(x=>x!==n);          // sale de la lista de la clase
+  S.names=S.names.filter(x=>x!==n);
+  if(S.qualPos>0)S.qualPos--;                       // la cualidad se reutiliza en la próxima misión
+  S.phase="spin"; S.chooser=null; save(); draw(); updateUI(); renderMission();
 }
 
 /* =====================  ROLLOS  ===================== */
@@ -596,7 +609,11 @@ document.getElementById("closeSet").onclick=()=>setO.classList.remove("show");
 document.getElementById("saveNames").onclick=()=>{
   const list=document.getElementById("namesArea").value.split("\n").map(s=>s.trim()).filter(Boolean);
   if(!list.length)return;
-  S.allNames=list; S.names=[...list]; if(S.phase==="answer")S.phase="spin"; save(); setO.classList.remove("show"); draw(); updateUI(); renderMission();
+  // quienes ya giraron no vuelven a entrar; los nombres nuevos sí se suman
+  const spun=S.allNames.filter(x=>!S.names.includes(x) && x!==S.chooser);
+  if(S.chooser && !list.includes(S.chooser)){S.phase="spin";S.chooser=null}
+  S.allNames=[...new Set(list)]; S.names=S.allNames.filter(x=>!spun.includes(x) && x!==S.chooser);
+  if(S.phase==="answer")S.phase="spin"; save(); setO.classList.remove("show"); draw(); updateUI(); renderMission();
 };
 function resetAll(){ const names=S.allNames; S=fresh(names); save(); buildScrolls(); draw(); updateUI(); renderMission(); }
 document.getElementById("resetAll").onclick=()=>{ if(confirm("¿Reiniciar la ruleta y volver a cerrar los 25 rollos?")){resetAll();setO.classList.remove("show")} };
