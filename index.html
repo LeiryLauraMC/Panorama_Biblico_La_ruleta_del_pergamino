@@ -143,6 +143,9 @@ main{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1.05fr 1fr;gr
 .settings h2{font-family:'Playfair Display';font-size:1.6rem;margin-bottom:6px}
 .settings p{color:var(--ink2);font-size:.95rem;margin-bottom:12px}
 .settings textarea{width:100%;height:42vh;font-family:'DM Sans';font-size:1rem;padding:12px;border-radius:10px;border:2px solid var(--ink);background:#fffaf0;resize:vertical}
+.absent-box{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px;font-size:.88rem;color:var(--ink2)}
+.absent-box:empty{display:none}
+.absent-chip{font-family:'DM Sans';font-weight:700;font-size:.85rem;padding:4px 12px;border-radius:20px;border:1.5px solid var(--ink);background:var(--gold2);cursor:pointer}
 .settings .row{display:flex;gap:10px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 
 /* final */
@@ -248,6 +251,7 @@ footer{flex:0 0 auto;text-align:center;padding:.4vh 0 1.4vh;font-size:clamp(.75r
     <h2>Estudiantes de la clase</h2>
     <p>Un nombre por línea. Puedes agregar o quitar personas en cualquier momento: quienes ya giraron no vuelven a entrar, los nuevos se suman a la ruleta y los rollos abiertos se conservan.</p>
     <textarea id="namesArea"></textarea>
+    <div class="absent-box" id="absentBox"></div>
     <div class="row">
       <button class="btn alt" id="resetAll">Reiniciar todo</button>
       <button class="btn alt" id="closeSet">Cancelar</button>
@@ -343,13 +347,14 @@ const QUALITIES = [
 const KEY="ruletaPergamino_v1";
 const shuffle=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
 
+const SRC=DEFAULT_NAMES.join("|");   // si cambias la lista en el código, la página empieza con la lista nueva
 function fresh(names){
   names = names || DEFAULT_NAMES;
-  return {allNames:[...names], names:[...names], scrollMap:shuffle([...Array(25).keys()]),
+  return {src:SRC, absent:[], allNames:[...names], names:[...names], scrollMap:shuffle([...Array(25).keys()]),
           opened:Array(25).fill(false), qualOrder:shuffle([...Array(QUALITIES.length).keys()]), qualPos:0,
           phase:"spin", chooser:null, quality:null};
 }
-function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.scrollMap&&s.opened)return s}catch(e){}return null}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.scrollMap&&s.opened&&s.src===SRC){s.absent=s.absent||[];return s}}catch(e){}return null}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 let S = load() || fresh();
 
@@ -520,7 +525,7 @@ function renderMission(){
 function markAbsent(){
   if(S.phase!=="mission"||spinning)return;
   const n=S.chooser;
-  S.allNames=S.allNames.filter(x=>x!==n);          // sale de la lista de la clase
+  if(!S.absent.includes(n))S.absent.push(n);        // ausente solo por hoy: "Reiniciar todo" lo devuelve
   S.names=S.names.filter(x=>x!==n);
   if(S.qualPos>0)S.qualPos--;                       // la cualidad se reutiliza en la próxima misión
   S.phase="spin"; S.chooser=null; save(); draw(); updateUI(); renderMission();
@@ -599,20 +604,31 @@ function updateUI(){
 
 document.getElementById("spinBtn").onclick=spin;
 document.addEventListener("keydown",e=>{ if(e.code==="Space" && !document.querySelector(".overlay.show") && document.activeElement.tagName!=="TEXTAREA"){e.preventDefault();spin()} });
-document.getElementById("refillBtn").onclick=()=>{S.names=[...S.allNames];save();draw();updateUI()};
+document.getElementById("refillBtn").onclick=()=>{S.names=S.allNames.filter(x=>!S.absent.includes(x));save();draw();updateUI()};
 document.getElementById("fsBtn").onclick=()=>{ if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.() };
 
 /* settings */
 const setO=document.getElementById("setOverlay");
-document.getElementById("setBtn").onclick=()=>{document.getElementById("namesArea").value=S.allNames.join("\n");setO.classList.add("show")};
+function renderAbsent(){
+  const box=document.getElementById("absentBox");
+  if(!S.absent.length){box.innerHTML="";return}
+  box.innerHTML=`<span>Ausentes hoy (toca para que regrese a la ruleta):</span>`+
+    S.absent.map(n=>`<button class="absent-chip" data-n="${n.replace(/"/g,"&quot;")}">${n} ↺</button>`).join("");
+  box.querySelectorAll(".absent-chip").forEach(b=>b.onclick=()=>{
+    const n=b.dataset.n; S.absent=S.absent.filter(x=>x!==n); if(!S.names.includes(n))S.names.push(n);
+    save(); draw(); updateUI(); renderAbsent();
+  });
+}
+document.getElementById("setBtn").onclick=()=>{document.getElementById("namesArea").value=S.allNames.join("\n");renderAbsent();setO.classList.add("show")};
 document.getElementById("closeSet").onclick=()=>setO.classList.remove("show");
 document.getElementById("saveNames").onclick=()=>{
   const list=document.getElementById("namesArea").value.split("\n").map(s=>s.trim()).filter(Boolean);
   if(!list.length)return;
   // quienes ya giraron no vuelven a entrar; los nombres nuevos sí se suman
-  const spun=S.allNames.filter(x=>!S.names.includes(x) && x!==S.chooser);
+  const spun=S.allNames.filter(x=>!S.names.includes(x) && x!==S.chooser && !S.absent.includes(x));
   if(S.chooser && !list.includes(S.chooser)){S.phase="spin";S.chooser=null}
-  S.allNames=[...new Set(list)]; S.names=S.allNames.filter(x=>!spun.includes(x) && x!==S.chooser);
+  S.allNames=[...new Set(list)]; S.absent=S.absent.filter(x=>S.allNames.includes(x));
+  S.names=S.allNames.filter(x=>!spun.includes(x) && x!==S.chooser && !S.absent.includes(x));
   if(S.phase==="answer")S.phase="spin"; save(); setO.classList.remove("show"); draw(); updateUI(); renderMission();
 };
 function resetAll(){ const names=S.allNames; S=fresh(names); save(); buildScrolls(); draw(); updateUI(); renderMission(); }
